@@ -1,0 +1,45 @@
+<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>OneDeskBiz</title>
+<style>:root{--t:#0F766E;--d:#0F172A;--a:#F59E0B;--l:#F1F5F9}*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--l);color:var(--d)}
+header{background:var(--t);color:#fff;padding:10px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}header b{font-size:20px}header span{font-size:12px;opacity:.85}
+.sp{flex:1}select,input,button{padding:8px 10px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px}button{background:var(--t);color:#fff;border:0;cursor:pointer}
+nav{display:flex;gap:6px;padding:10px 16px;overflow:auto;background:#fff}nav button{background:var(--l);color:var(--d)}nav button.on{background:var(--d);color:#fff}
+main{padding:16px;max-width:1100px;margin:auto}.g{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}.c{background:#fff;border-radius:10px;padding:14px;margin-bottom:12px}
+.c small{color:#64748b}.c h2{margin:4px 0 0;font-size:22px}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:8px 6px;border-bottom:1px solid #eee;text-align:left}td.r,th.r{text-align:right}
+.red{color:#dc2626}.grn{color:#16a34a}.bars{display:flex;gap:14px;align-items:flex-end;height:120px}.bars div{flex:1;text-align:center;font-size:11px}.bars i{display:inline-block;width:42%;background:var(--t);margin:0 1px}.bars i+i{background:var(--a)}
+#login{max-width:320px;margin:12vh auto;background:#fff;padding:24px;border-radius:12px;display:grid;gap:10px}.tools{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}.tools input{flex:1;min-width:160px}a{color:var(--t);cursor:pointer;text-decoration:underline}</style></head><body>
+<div id=login><h2 style="margin:0;color:#0F766E">OneDeskBiz</h2><small>Your Tally. Live. Anywhere.</small><input id=u placeholder=Username><input id=p type=password placeholder=Password><button onclick=doLogin()>Login</button><small id=err class=red></small></div>
+<div id=app hidden><header><b>OneDeskBiz</b><select id=co onchange=show(tab)></select><span id=ls></span><div class=sp></div><span id=who></span><button onclick=logout() style="background:#0F172A">Logout</button></header>
+<nav id=nav></nav><main id=m></main></div>
+<script>
+let tok=localStorage.odb_tok||'',role='',tab='Dashboard',$=id=>document.getElementById(id);
+const f=n=>n==null?'-':'₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:0}),dt=s=>s?s.slice(6,8)+'-'+s.slice(4,6)+'-'+s.slice(0,4):'',E=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(p,o={}){const r=await fetch('/api/'+p,{...o,headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok}});if(r.status==401){logout();throw 0}if(!r.ok){alert((await r.json()).detail||'Error');throw 0}return r.json()}
+async function doLogin(){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('u').value,password:$('p').value})});if(!r.ok){$('err').textContent='Wrong username or password';return}const d=await r.json();tok=d.token;localStorage.odb_tok=tok;boot()}
+function logout(){localStorage.removeItem('odb_tok');location.reload()}
+const cq=()=>'company='+encodeURIComponent($('co').value);
+async function boot(){let cs;try{cs=await api('companies')}catch(e){return}$('login').hidden=true;$('app').hidden=false;
+$('co').innerHTML=cs.map(c=>`<option>${E(c.name)}</option>`).join('');window.CS=cs;
+const me=await api('summary?'+(cs[0]?'company='+encodeURIComponent(cs[0].name):'')).catch(()=>({}));
+try{await api('users');role='admin'}catch(e){role='user'}
+const tabs=['Dashboard','Outstanding','Day Book','Stock'].concat(role=='admin'?['Users']:[]);$('nav').innerHTML=tabs.map(t=>`<button onclick="show('${t}')">${t}</button>`).join('');show('Dashboard');setInterval(()=>show(tab,1),60000)}
+async function show(t,quiet){tab=t;[...$('nav').children].forEach(b=>b.classList.toggle('on',b.textContent==t));const c=(window.CS||[]).find(x=>x.name==$('co').value);
+if(c)$('ls').textContent='Synced '+Math.max(0,Math.round((Date.now()/1000-c.last_sync)/60))+' min ago';
+const h={Dashboard:dash,Outstanding:outs,'Day Book':book,Stock:stk,Users:usr}[t];await h()}
+async function dash(){const d=await api('summary?'+cq());const mx=Math.max(1,...d.monthly.map(x=>Math.max(x.sales,x.purchase)));
+$('m').innerHTML=`<div class=g>${[['Sales',d.sales,'grn'],['Purchase',d.purchase],['Receipts',d.receipts],['Payments',d.payments],['Receivable',d.receivable],['Payable',d.payable,'red'],['Cash + Bank',d.cash_bank]].map(x=>`<div class=c><small>${x[0]}</small><h2 class=${x[2]||''}>${f(x[1])}</h2></div>`).join('')}</div>
+<div class=c><small>Monthly Sales (teal) vs Purchase (amber)</small><div class=bars>${d.monthly.map(x=>`<div><i style="height:${x.sales/mx*100}px"></i><i style="height:${x.purchase/mx*100}px"></i><br>${x.m.slice(4)}/${x.m.slice(2,4)}</div>`).join('')}</div></div>`}
+async function outs(kind='debtors',q=''){const r=await api(`outstanding?kind=${kind}&q=${encodeURIComponent(q)}&${cq()}`);
+$('m').innerHTML=`<div class=tools><button onclick="outs('debtors')">Receivable</button>${role=='admin'||1?`<button onclick="outs('creditors')">Payable</button>`:''}<input id=s placeholder="Search party" value="${E(q)}" oninput="clearTimeout(window.T);window.T=setTimeout(()=>outs('${kind}',this.value),300)"></div>
+<div class=c><b>Total ${f(r.reduce((a,x)=>a+x.bal,0))}</b><table><tr><th>Party<th class=r>Amount<th>Last entry<th></tr>${r.map(x=>`<tr><td>${E(x.name)}<td class="r ${kind=='debtors'?'red':''}">${f(x.bal)}<td>${dt(x.last_date)}<td><a onclick="book('','${E(x.name).replace(/'/g,'')}')">Ledger</a></tr>`).join('')}</table></div>`;if(q)$('s').focus()}
+async function book(vt='',party='',q=''){if(party){tab='Day Book';[...$('nav').children].forEach(b=>b.classList.toggle('on',b.textContent==tab))}
+const r=await api(`daybook?vtype=${vt}&q=${encodeURIComponent(q)}&party=${encodeURIComponent(party)}&${cq()}`);
+$('m').innerHTML=`<div class=tools>${['','Sales','Purchase','Receipt','Payment'].map(x=>`<button onclick="book('${x}')">${x||'All'}</button>`).join('')}<input placeholder="Search party / no. / narration" value="${E(q)}" onchange="book('${vt}','',this.value)"></div>${party?`<div class=c><b>Ledger: ${E(party)}</b></div>`:''}
+<div class=c><table><tr><th>Date<th>Voucher<th>Party<th class=r>Amount</tr>${r.map(x=>`<tr><td>${dt(x.date)}<td>${E(x.vtype)} #${E(x.number)}<td>${E(x.party)}<td class=r>${f(Math.abs(x.amount))}</tr>`).join('')}</table></div>`}
+async function stk(q=''){const r=await api(`stock?q=${encodeURIComponent(q)}&${cq()}`);
+$('m').innerHTML=`<div class=tools><input placeholder="Search item" value="${E(q)}" onchange="stk(this.value)"></div><div class=c><b>Stock value ${f(r.reduce((a,x)=>a+Math.abs(x.value),0))}</b><table><tr><th>Item<th class=r>Qty<th class=r>Rate<th class=r>Value</tr>${r.map(x=>`<tr><td>${E(x.name)}<td class=r>${x.qty} ${E(x.unit)}<td class=r>${f(x.rate)}<td class=r>${f(Math.abs(x.value))}</tr>`).join('')}</table></div>`}
+async function usr(){const r=await api('users');$('m').innerHTML=`<div class=c><b>Add / update user</b><div class=tools><input id=nu placeholder=username><input id=np placeholder="password (6+)"><select id=nr><option>accountant<option>sales<option>admin</select><input id=nc placeholder="companies (comma, blank = all)"><button onclick="addU()">Save</button></div></div>
+<div class=c><table><tr><th>User<th>Role<th>Companies<th></tr>${r.map(x=>`<tr><td>${E(x.username)}<td>${x.role}<td>${E(x.companies)}<td><a onclick="delU('${x.username}')">Delete</a></tr>`).join('')}</table></div>`}
+async function addU(){await api('users',{method:'POST',body:JSON.stringify({username:$('nu').value,password:$('np').value,role:$('nr').value,companies:$('nc').value})});usr()}
+async function delU(n){if(confirm('Delete '+n+'?')){await api('users/'+n,{method:'DELETE'});usr()}}
+if(tok)boot();
+</script></body></html>
